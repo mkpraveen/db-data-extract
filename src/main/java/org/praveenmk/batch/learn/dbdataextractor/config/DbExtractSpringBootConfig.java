@@ -5,23 +5,21 @@ import org.praveenmk.batch.learn.dbdataextractor.model.UserDetails;
 import org.praveenmk.batch.learn.dbdataextractor.processor.UserDetailsItemProcessor;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
-import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
-import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
-import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.*;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
-import org.springframework.batch.core.step.tasklet.TaskletStep;
-import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
 import org.springframework.batch.item.file.FlatFileItemWriter;
 import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
 import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
 import java.sql.ResultSet;
@@ -38,24 +36,35 @@ public class DbExtractSpringBootConfig {
     public StepBuilderFactory stepBuilderFactory;
 
     @Autowired
-    DataSource dataSource;
+    DataSource appDataSource;
+
+    @Autowired
+    DataSource batchDataSource;
+
+    @Primary
+    @Bean
+    @ConfigurationProperties(prefix="spring.app.datasource")
+    public DataSource appDataSource() {
+        return DataSourceBuilder.create().build();
+    }
+
+    @Bean
+    @ConfigurationProperties(prefix="spring.batchconfig.datasource")
+    public DataSource batchDataSource(){
+        return DataSourceBuilder.create().build();
+    }
 
 
     @Bean
-    public DataSource dataSource() {
-        final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("com.mysql.jdbc.Driver");
-        dataSource.setUrl("jdbc:mysql://localhost:3306/movie_rating?useSSL=false");
-        dataSource.setUsername("movieadmin");
-        dataSource.setPassword("movieadmin123");
-
-        return dataSource;
+    BatchConfigurer configurer(@Qualifier("batchDataSource") DataSource dataSource){
+        return new DefaultBatchConfigurer(dataSource);
     }
+
 
     @Bean
     public JdbcCursorItemReader<UserDetails> reader() {
         JdbcCursorItemReader<UserDetails> itemReader = new JdbcCursorItemReader<>();
-        itemReader.setDataSource(dataSource);
+        itemReader.setDataSource(appDataSource);
         itemReader.setSql("SELECT * FROM USER_DETAILS");
         itemReader.setRowMapper(new UserDetailsRowMapper());
         return itemReader;
@@ -102,12 +111,11 @@ public class DbExtractSpringBootConfig {
 
     @Bean
     public Step step1() {
-        final Step step1 = stepBuilderFactory.get("step1")
+        return stepBuilderFactory.get("step1")
                 .<UserDetails,UserDetails>chunk(10)
                 .reader(reader())
                 .processor(processor())
                 .writer(writer()).build();
-        return step1;
     }
 
 
